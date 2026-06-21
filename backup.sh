@@ -95,6 +95,7 @@ audible download \
     --aax-fallback \
     --cover \
     --chapter \
+    --ignore-errors \
     --output-dir "$DOWNLOAD_DIR"
 
 # -------------------------------------------------------
