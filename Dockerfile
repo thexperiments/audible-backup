@@ -23,5 +23,7 @@ ENV OUTPUT_DIR=/output/converted
 # Optional: set a cron schedule to run automatically, e.g. "0 2 * * 0"
 # Leave unset to run once and exit.
 ENV SCHEDULE=""
+# Set to "false" to skip the immediate backup when SCHEDULE is set.
+ENV RUN_ON_STARTUP=true
 
 ENTRYPOINT ["/app/entrypoint.sh"]

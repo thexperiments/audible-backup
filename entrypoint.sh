@@ -4,8 +4,10 @@ set -euo pipefail
 # -------------------------------------------------------
 # Entrypoint
 #
-# SCHEDULE unset  → run backup once and exit
-# SCHEDULE set    → install crontab and run crond forever
+# SCHEDULE unset        → run backup once and exit
+# SCHEDULE set          → install crontab and run crond forever
+# RUN_ON_STARTUP=true   → also run backup immediately when SCHEDULE is set
+#                         (default: true)
 # -------------------------------------------------------
 
 if [[ -z "${SCHEDULE:-}" ]]; then
@@ -27,4 +29,14 @@ echo "[entrypoint] Next run: $(crontab -l)"
 echo "[entrypoint] Starting cron daemon..."
 
 # Run cron in foreground (-f) so the container stays alive.
-exec cron -f
+# Start it in the background first if we need to run an immediate backup.
+if [[ "${RUN_ON_STARTUP:-true}" == "true" ]]; then
+    echo "[entrypoint] RUN_ON_STARTUP=true — running initial backup before first scheduled run."
+    cron -f &
+    CRON_PID=$!
+    /app/backup.sh >> /proc/1/fd/1 2>> /proc/1/fd/2
+    # Hand control back to the already-running cron daemon
+    wait "$CRON_PID"
+else
+    exec cron -f
+fi
