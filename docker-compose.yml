@@ -1,7 +1,6 @@
 services:
   audible-backup:
-    build: .
-    image: audible-backup:latest
+    image: ghcr.io/thexperiments/audible-backup:main
     restart: "no"
     volumes:
       # audible-cli auth config — created once via `audible quickstart`

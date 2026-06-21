@@ -6,6 +6,15 @@ Backs up your Audible library to DRM-free M4B files. Chapters and metadata are p
 
 - Docker, **or** `ffmpeg` + `audible-cli` installed locally
 
+## Image
+
+Pre-built images are published to GHCR on every push to `main` and on version tags:
+
+```
+ghcr.io/thexperiments/audible-backup:main      # latest main
+ghcr.io/thexperiments/audible-backup:v0.0.1    # pinned release
+```
+
 ## First-time setup
 
 ```bash
@@ -30,16 +39,16 @@ Output lands in `~/Audiobooks/converted/`. Re-running skips already-converted bo
 ## Run with Docker
 
 ```bash
-# Build
-docker build -t audible-backup .
+# Pull pre-built image
+docker pull ghcr.io/thexperiments/audible-backup:main
 
-# First run — mount your audible config and output directories
+# Run
 docker run --rm \
   -v "$HOME/.audible:/root/.audible" \
   -v "$HOME/.authcode:/root/.authcode:ro" \
   -v "$HOME/Audiobooks/raw:/output/raw" \
   -v "$HOME/Audiobooks/converted:/output/converted" \
-  audible-backup
+  ghcr.io/thexperiments/audible-backup:main
 ```
 
 ## Run on TrueNAS (Docker)
@@ -60,11 +69,10 @@ Then copy `~/.audible/` to `/mnt/tank/audible/config/` on your NAS, and write yo
 echo "CAFED00D" > /mnt/tank/audible/config/authcode
 ```
 
-**2. Build the image on the NAS** (via SSH):
+**2. Pull the image on the NAS** (via SSH) — no build step needed:
 
 ```bash
-cd /path/to/audible-backup
-docker compose build
+docker pull ghcr.io/thexperiments/audible-backup:main
 ```
 
 **3. Schedule with TrueNAS cron** (System Settings > Advanced > Cron Jobs):
