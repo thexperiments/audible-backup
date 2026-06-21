@@ -3,5 +3,3 @@ raw/
 
 # Auth config — never commit credentials
 .audible/
-.authcode
-authcode

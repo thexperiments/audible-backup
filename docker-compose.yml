@@ -4,9 +4,8 @@ services:
     restart: unless-stopped
     volumes:
       # audible-cli auth config — created once via `audible quickstart`
+      # run `audible activation-bytes` once to store activation bytes in the config
       - /mnt/tank/audible/config:/root/.audible
-      # activation bytes for AAX decryption
-      - /mnt/tank/audible/config/authcode:/root/.authcode:ro
       # raw downloaded AAX/AAXC files
       - /mnt/tank/audible/raw:/output/raw
       # final converted M4B files
@@ -14,7 +13,6 @@ services:
     environment:
       DOWNLOAD_DIR: /output/raw
       OUTPUT_DIR: /output/converted
-      AUTHCODE_FILE: /root/.authcode
       # Cron schedule — remove or leave empty to run once and exit.
       # Examples:
       #   "0 2 * * 0"   every Sunday at 2am

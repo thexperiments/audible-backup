@@ -9,7 +9,7 @@ set -euo pipefail
 
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-$HOME/Audiobooks/raw}"
 OUTPUT_DIR="${OUTPUT_DIR:-$HOME/Audiobooks/converted}"
-AUTHCODE_FILE="${AUTHCODE_FILE:-$HOME/.authcode}"
+AUDIBLE_CONFIG_DIR="${AUDIBLE_CONFIG_DIR:-/root/.audible}"
 
 # -------------------------------------------------------
 # Helpers
@@ -21,6 +21,59 @@ die()  { echo "[$(date '+%H:%M:%S')] ERROR: $*" >&2; exit 1; }
 
 require() {
     command -v "$1" &>/dev/null || die "'$1' is not installed or not in PATH"
+}
+
+# Read activation_bytes from the audible-cli auth JSON file.
+# audible-cli stores it there after running `audible activation-bytes`.
+get_activation_bytes() {
+    local config_dir="$1"
+    local config_file="$config_dir/config.toml"
+
+    if [[ ! -f "$config_file" ]]; then
+        die "audible-cli config not found at $config_file. Run: audible quickstart"
+    fi
+
+    # Extract the primary profile name from config.toml
+    local profile
+    profile=$(python3 - "$config_file" <<'EOF'
+import sys, re
+path = sys.argv[1]
+primary = None
+in_app = False
+for line in open(path):
+    line = line.strip()
+    if line == "[APP]":
+        in_app = True
+    elif line.startswith("["):
+        in_app = False
+    elif in_app:
+        m = re.match(r'primary_profile\s*=\s*"([^"]+)"', line)
+        if m:
+            primary = m.group(1)
+if primary:
+    print(primary)
+else:
+    sys.exit(1)
+EOF
+) || die "Could not determine primary_profile from $config_file"
+
+    # Derive the auth file name from the profile name (audible-cli default: <profile>.json)
+    local auth_file="$config_dir/${profile}.json"
+    if [[ ! -f "$auth_file" ]]; then
+        die "Auth file not found: $auth_file"
+    fi
+
+    local ab
+    ab=$(python3 -c "
+import json, sys
+data = json.load(open('$auth_file'))
+ab = data.get('activation_bytes')
+if not ab:
+    sys.exit(1)
+print(ab)
+" 2>/dev/null) || die "activation_bytes not found in $auth_file. Run: audible activation-bytes"
+
+    echo "$ab"
 }
 
 # -------------------------------------------------------
@@ -51,11 +104,7 @@ audible download \
 aax_files=("$DOWNLOAD_DIR"/*.aax)
 if [[ -e "${aax_files[0]}" ]]; then
     # Read activation bytes lazily — only needed if AAX files exist
-    if [[ ! -f "$AUTHCODE_FILE" ]]; then
-        die "Activation bytes file not found at $AUTHCODE_FILE. Run: audible activation-bytes > $AUTHCODE_FILE"
-    fi
-    AUTHCODE=$(tr -d '[:space:]' < "$AUTHCODE_FILE")
-    [[ -z "$AUTHCODE" ]] && die "Activation bytes file is empty: $AUTHCODE_FILE"
+    AUTHCODE=$(get_activation_bytes "$AUDIBLE_CONFIG_DIR")
 
     log "Converting ${#aax_files[@]} AAX file(s) to M4B..."
     for f in "${aax_files[@]}"; do

@@ -20,7 +20,6 @@ VOLUME ["/root/.audible"]
 
 ENV DOWNLOAD_DIR=/output/raw
 ENV OUTPUT_DIR=/output/converted
-ENV AUTHCODE_FILE=/root/.authcode
 # Optional: set a cron schedule to run automatically, e.g. "0 2 * * 0"
 # Leave unset to run once and exit.
 ENV SCHEDULE=""
