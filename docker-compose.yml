@@ -1,0 +1,18 @@
+services:
+  audible-backup:
+    build: .
+    image: audible-backup:latest
+    restart: "no"
+    volumes:
+      # audible-cli auth config — created once via `audible quickstart`
+      - /mnt/tank/audible/config:/root/.audible
+      # activation bytes for AAX decryption
+      - /mnt/tank/audible/config/authcode:/root/.authcode:ro
+      # raw downloaded AAX/AAXC files
+      - /mnt/tank/audible/raw:/output/raw
+      # final converted M4B files
+      - /mnt/tank/audible/converted:/output/converted
+    environment:
+      DOWNLOAD_DIR: /output/raw
+      OUTPUT_DIR: /output/converted
+      AUTHCODE_FILE: /root/.authcode

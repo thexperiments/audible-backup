@@ -1,0 +1,7 @@
+# Raw downloaded AAX/AAXC files
+raw/
+
+# Auth config — never commit credentials
+.audible/
+.authcode
+authcode
