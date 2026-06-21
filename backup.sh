@@ -5,11 +5,14 @@ set -euo pipefail
 # Audible Backup Script
 # Downloads your Audible library and converts to M4B.
 # Handles both AAX and AAXC (fallback) formats.
+# Conversion starts as soon as each file finishes
+# downloading — no need to wait for the full library.
 # -------------------------------------------------------
 
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-$HOME/Audiobooks/raw}"
 OUTPUT_DIR="${OUTPUT_DIR:-$HOME/Audiobooks/converted}"
 AUDIBLE_CONFIG_DIR="${AUDIBLE_CONFIG_DIR:-/root/.audible}"
+POLL_INTERVAL="${POLL_INTERVAL:-10}"   # seconds between directory scans
 
 # -------------------------------------------------------
 # Helpers
@@ -111,99 +114,124 @@ make_output_name() {
     echo "${author} - ${title}"
 }
 
+# Convert a single AAX file. Requires AUTHCODE to be set in the environment.
+# Usage: convert_aax <file>
+convert_aax() {
+    local f="$1"
+    local stem title out
+    stem=$(basename "$f" .aax)
+    title=$(make_output_name "$f" "$stem")
+    out="$OUTPUT_DIR/${title}.m4b"
+
+    if [[ -f "$out" ]]; then
+        log "  Skipping (exists): $title"
+        return
+    fi
+
+    log "  Converting AAX: $title"
+    ffmpeg -activation_bytes "$AUTHCODE" \
+           -i "$f" \
+           -codec copy \
+           "$out" \
+           -loglevel warning \
+    && log "  Done: $title" \
+    || warn "  Failed: $title"
+}
+
+# Convert a single AAXC file (reads key/iv from its .voucher sidecar).
+# Usage: convert_aaxc <file>
+convert_aaxc() {
+    local f="$1"
+    local stem title out voucher key iv
+    stem=$(basename "$f" .aaxc)
+    voucher="$DOWNLOAD_DIR/${stem}.voucher"
+
+    if [[ ! -f "$voucher" ]]; then
+        warn "  Skipping (no voucher file): $stem"
+        return
+    fi
+
+    key=$(python3 -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['key'])" 2>/dev/null) || { warn "  Failed to read key from voucher: $stem"; return; }
+    iv=$(python3  -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['iv'])"  2>/dev/null) || { warn "  Failed to read iv from voucher: $stem"; return; }
+
+    title=$(make_output_name "$f" "$stem")
+    out="$OUTPUT_DIR/${title}.m4b"
+
+    if [[ -f "$out" ]]; then
+        log "  Skipping (exists): $title"
+        return
+    fi
+
+    log "  Converting AAXC: $title"
+    ffmpeg -audible_key "$key" \
+           -audible_iv  "$iv" \
+           -i "$f" \
+           -codec copy \
+           "$out" \
+           -loglevel warning \
+    && log "  Done: $title" \
+    || warn "  Failed: $title"
+}
+
+# Scan DOWNLOAD_DIR for any .aax/.aaxc files not yet converted and process them.
+# Safe to call repeatedly — skips already-converted files.
+convert_new_files() {
+    local aax_files aaxc_files
+    aax_files=("$DOWNLOAD_DIR"/*.aax)
+    aaxc_files=("$DOWNLOAD_DIR"/*.aaxc)
+
+    if [[ -e "${aax_files[0]}" ]]; then
+        for f in "${aax_files[@]}"; do
+            convert_aax "$f"
+        done
+    fi
+
+    if [[ -e "${aaxc_files[0]}" ]]; then
+        for f in "${aaxc_files[@]}"; do
+            convert_aaxc "$f"
+        done
+    fi
+}
+
 mkdir -p "$DOWNLOAD_DIR" "$OUTPUT_DIR"
 
 # -------------------------------------------------------
-# Download
+# Download (background) + convert (polling loop)
 # -------------------------------------------------------
 
-log "Downloading Audible library (AAX with AAXC fallback)..."
+# Read activation bytes up front — needed as soon as the first AAX lands.
+# This also validates the config early so we fail fast before any downloading.
+log "Reading activation bytes from audible-cli config..."
+AUTHCODE=$(get_activation_bytes "$AUDIBLE_CONFIG_DIR")
+
+log "Starting download of Audible library in the background..."
 audible download \
     --all \
     --aax-fallback \
     --cover \
     --chapter \
     --ignore-errors \
-    --output-dir "$DOWNLOAD_DIR"
+    --output-dir "$DOWNLOAD_DIR" &
+DOWNLOAD_PID=$!
 
-# -------------------------------------------------------
-# Convert AAX files (single shared activation bytes)
-# -------------------------------------------------------
+log "Polling for completed downloads every ${POLL_INTERVAL}s (PID: $DOWNLOAD_PID)..."
+while kill -0 "$DOWNLOAD_PID" 2>/dev/null; do
+    convert_new_files
+    sleep "$POLL_INTERVAL"
+done
 
-aax_files=("$DOWNLOAD_DIR"/*.aax)
-if [[ -e "${aax_files[0]}" ]]; then
-    # Read activation bytes lazily — only needed if AAX files exist
-    AUTHCODE=$(get_activation_bytes "$AUDIBLE_CONFIG_DIR")
+# Wait for the download process to exit and capture its exit code.
+wait "$DOWNLOAD_PID" || warn "audible download exited with a non-zero status — some titles may be missing."
 
-    log "Converting ${#aax_files[@]} AAX file(s) to M4B..."
-    for f in "${aax_files[@]}"; do
-        stem=$(basename "$f" .aax)
-        title=$(make_output_name "$f" "$stem")
-        out="$OUTPUT_DIR/${title}.m4b"
-        if [[ -f "$out" ]]; then
-            log "  Skipping (exists): $title"
-            continue
-        fi
-        log "  Converting: $title"
-        ffmpeg -activation_bytes "$AUTHCODE" \
-               -i "$f" \
-               -codec copy \
-               "$out" \
-               -loglevel warning \
-        && log "  Done: $title" \
-        || warn "  Failed: $title"
-    done
-else
-    log "No AAX files found."
-fi
-
-# -------------------------------------------------------
-# Convert AAXC files (per-file voucher key/iv)
-# -------------------------------------------------------
-
-aaxc_files=("$DOWNLOAD_DIR"/*.aaxc)
-if [[ -e "${aaxc_files[0]}" ]]; then
-    log "Converting ${#aaxc_files[@]} AAXC file(s) to M4B..."
-    for f in "${aaxc_files[@]}"; do
-        stem=$(basename "$f" .aaxc)
-        voucher="$DOWNLOAD_DIR/${stem}.voucher"
-
-        if [[ ! -f "$voucher" ]]; then
-            warn "  Skipping (no voucher file): $stem"
-            continue
-        fi
-
-        # Extract key and iv from the JSON voucher file
-        key=$(python3 -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['key'])" 2>/dev/null) || { warn "  Failed to read key from voucher: $stem"; continue; }
-        iv=$(python3  -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['iv'])"  2>/dev/null) || { warn "  Failed to read iv from voucher: $stem"; continue; }
-
-        title=$(make_output_name "$f" "$stem")
-        out="$OUTPUT_DIR/${title}.m4b"
-
-        if [[ -f "$out" ]]; then
-            log "  Skipping (exists): $title"
-            continue
-        fi
-
-        log "  Converting: $title"
-        ffmpeg -audible_key "$key" \
-               -audible_iv  "$iv" \
-               -i "$f" \
-               -codec copy \
-               "$out" \
-               -loglevel warning \
-        && log "  Done: $title" \
-        || warn "  Failed: $title"
-    done
-else
-    log "No AAXC files found."
-fi
+# Final pass: catch any files that landed during the last sleep interval.
+log "Download finished. Running final conversion pass..."
+convert_new_files
 
 # -------------------------------------------------------
 # Summary
 # -------------------------------------------------------
 
-converted=(  "$OUTPUT_DIR"/*.m4b)
+converted=("$OUTPUT_DIR"/*.m4b)
 count=${#converted[@]}
 [[ -e "${converted[0]}" ]] && log "Backup complete. $count book(s) in: $OUTPUT_DIR" \
                            || log "Backup complete. No output files found — check warnings above."
