@@ -82,6 +82,34 @@ print(ab)
 
 require audible
 require ffmpeg
+require ffprobe
+
+# Build an output filename from embedded metadata: "Author - Title.m4b"
+# Falls back to the input file stem if author or title tags are missing.
+# Usage: make_output_name <input_file> <stem_fallback>
+make_output_name() {
+    local input="$1"
+    local fallback="$2"
+
+    local author title
+    author=$(ffprobe -v quiet -show_entries format_tags=artist,author \
+             -of default=noprint_wrappers=1:nokey=1 "$input" 2>/dev/null \
+             | head -1 | sed 's/[[:space:]]*$//')
+    title=$(ffprobe -v quiet -show_entries format_tags=title \
+            -of default=noprint_wrappers=1:nokey=1 "$input" 2>/dev/null \
+            | head -1 | sed 's/[[:space:]]*$//')
+
+    if [[ -z "$author" || -z "$title" ]]; then
+        echo "$fallback"
+        return
+    fi
+
+    # Sanitize: strip characters not safe in filenames
+    author=$(echo "$author" | tr -d '/:*?"<>|\\')
+    title=$(echo  "$title"  | tr -d '/:*?"<>|\\')
+
+    echo "${author} - ${title}"
+}
 
 mkdir -p "$DOWNLOAD_DIR" "$OUTPUT_DIR"
 
@@ -109,7 +137,8 @@ if [[ -e "${aax_files[0]}" ]]; then
 
     log "Converting ${#aax_files[@]} AAX file(s) to M4B..."
     for f in "${aax_files[@]}"; do
-        title=$(basename "$f" .aax)
+        stem=$(basename "$f" .aax)
+        title=$(make_output_name "$f" "$stem")
         out="$OUTPUT_DIR/${title}.m4b"
         if [[ -f "$out" ]]; then
             log "  Skipping (exists): $title"
@@ -136,23 +165,25 @@ aaxc_files=("$DOWNLOAD_DIR"/*.aaxc)
 if [[ -e "${aaxc_files[0]}" ]]; then
     log "Converting ${#aaxc_files[@]} AAXC file(s) to M4B..."
     for f in "${aaxc_files[@]}"; do
-        title=$(basename "$f" .aaxc)
+        stem=$(basename "$f" .aaxc)
+        voucher="$DOWNLOAD_DIR/${stem}.voucher"
+
+        if [[ ! -f "$voucher" ]]; then
+            warn "  Skipping (no voucher file): $stem"
+            continue
+        fi
+
+        # Extract key and iv from the JSON voucher file
+        key=$(python3 -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['key'])" 2>/dev/null) || { warn "  Failed to read key from voucher: $stem"; continue; }
+        iv=$(python3  -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['iv'])"  2>/dev/null) || { warn "  Failed to read iv from voucher: $stem"; continue; }
+
+        title=$(make_output_name "$f" "$stem")
         out="$OUTPUT_DIR/${title}.m4b"
-        voucher="$DOWNLOAD_DIR/${title}.voucher"
 
         if [[ -f "$out" ]]; then
             log "  Skipping (exists): $title"
             continue
         fi
-
-        if [[ ! -f "$voucher" ]]; then
-            warn "  Skipping (no voucher file): $title"
-            continue
-        fi
-
-        # Extract key and iv from the JSON voucher file
-        key=$(python3 -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['key'])" 2>/dev/null) || { warn "  Failed to read key from voucher: $title"; continue; }
-        iv=$(python3  -c "import json,sys; v=json.load(open('$voucher')); print(v['content_license']['license_response']['iv'])"  2>/dev/null) || { warn "  Failed to read iv from voucher: $title"; continue; }
 
         log "  Converting: $title"
         ffmpeg -audible_key "$key" \
