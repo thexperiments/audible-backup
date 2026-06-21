@@ -1,7 +1,7 @@
 services:
   audible-backup:
     image: ghcr.io/thexperiments/audible-backup:main
-    restart: "no"
+    restart: unless-stopped
     volumes:
       # audible-cli auth config — created once via `audible quickstart`
       - /mnt/tank/audible/config:/root/.audible
@@ -15,3 +15,8 @@ services:
       DOWNLOAD_DIR: /output/raw
       OUTPUT_DIR: /output/converted
       AUTHCODE_FILE: /root/.authcode
+      # Cron schedule — remove or leave empty to run once and exit.
+      # Examples:
+      #   "0 2 * * 0"   every Sunday at 2am
+      #   "0 3 * * *"   every day at 3am
+      SCHEDULE: "0 2 * * 0"

@@ -42,12 +42,21 @@ Output lands in `~/Audiobooks/converted/`. Re-running skips already-converted bo
 # Pull pre-built image
 docker pull ghcr.io/thexperiments/audible-backup:main
 
-# Run
+# Run once
 docker run --rm \
   -v "$HOME/.audible:/root/.audible" \
   -v "$HOME/.authcode:/root/.authcode:ro" \
   -v "$HOME/Audiobooks/raw:/output/raw" \
   -v "$HOME/Audiobooks/converted:/output/converted" \
+  ghcr.io/thexperiments/audible-backup:main
+
+# Run on a schedule (stays alive, re-runs every Sunday at 2am)
+docker run -d --restart unless-stopped \
+  -v "$HOME/.audible:/root/.audible" \
+  -v "$HOME/.authcode:/root/.authcode:ro" \
+  -v "$HOME/Audiobooks/raw:/output/raw" \
+  -v "$HOME/Audiobooks/converted:/output/converted" \
+  -e SCHEDULE="0 2 * * 0" \
   ghcr.io/thexperiments/audible-backup:main
 ```
 
@@ -75,17 +84,21 @@ echo "CAFED00D" > /mnt/tank/audible/config/authcode
 docker pull ghcr.io/thexperiments/audible-backup:main
 ```
 
-**3. Schedule with TrueNAS cron** (System Settings > Advanced > Cron Jobs):
+**3. Start with Docker Compose** — the included `docker-compose.yml` runs the container persistently on a cron schedule:
 
-- Command: `docker compose -f /path/to/audible-backup/docker-compose.yml run --rm audible-backup`
-- Schedule: weekly or as needed
-- Run as: `root`
+```bash
+docker compose up -d
+```
 
-Logs are visible under the job history, or append `>> /mnt/tank/audible/backup.log 2>&1` to the command.
+The default schedule is every Sunday at 2am (`0 2 * * 0`). Edit the `SCHEDULE` value in `docker-compose.yml` to change it. Logs are available via:
+
+```bash
+docker compose logs -f audible-backup
+```
 
 > **Note:** Adjust the volume paths in `docker-compose.yml` to match your actual pool/dataset layout (default assumes `/mnt/tank/audible/`).
 
-## Automate with cron (non-TrueNAS)
+## Automate with cron (non-TrueNAS, without Docker)
 
 ```
 # Run every Sunday at 2am
@@ -103,6 +116,7 @@ Logs are visible under the job history, or append `>> /mnt/tank/audible/backup.l
 
 | Variable | Default | Description |
 |---|---|---|
-| `DOWNLOAD_DIR` | `~/Audiobooks/raw` | Where raw AAX/AAXC files are saved |
-| `OUTPUT_DIR` | `~/Audiobooks/converted` | Where M4B files are written |
-| `AUTHCODE_FILE` | `~/.authcode` | Path to your activation bytes file |
+| `DOWNLOAD_DIR` | `/output/raw` | Where raw AAX/AAXC files are saved |
+| `OUTPUT_DIR` | `/output/converted` | Where M4B files are written |
+| `AUTHCODE_FILE` | `/root/.authcode` | Path to your activation bytes file |
+| `SCHEDULE` | *(unset)* | Cron expression — if set, container stays alive and runs on schedule; if unset, runs once and exits |
