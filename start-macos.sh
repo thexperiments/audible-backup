@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-IMAGE="ghcr.io/thexperiments/audible-backup:main"
+IMAGE="audible-backup:local"
 
 # Directories on the host (edit these to suit your layout)
 AUDIBLE_CONFIG_DIR="${AUDIBLE_CONFIG_DIR:-$HOME/.audible}"
@@ -21,6 +21,11 @@ SCHEDULE="${SCHEDULE:-}"
 
 # Ensure host directories exist before mounting
 mkdir -p "$AUDIBLE_CONFIG_DIR" "$RAW_DIR" "$CONVERTED_DIR"
+
+# Build the image from the local Dockerfile
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "Building image from ${SCRIPT_DIR}/Dockerfile..."
+container build --arch arm64 -t "$IMAGE" "$SCRIPT_DIR"
 
 # Build the argument list
 args=(
