@@ -11,7 +11,7 @@ set -euo pipefail
 
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-$HOME/Audiobooks/raw}"
 OUTPUT_DIR="${OUTPUT_DIR:-$HOME/Audiobooks/converted}"
-AUDIBLE_CONFIG_DIR="${AUDIBLE_CONFIG_DIR:-/root/.audible}"
+AUDIBLE_CONFIG_DIR="${AUDIBLE_CONFIG_DIR:-$HOME/.audible}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"   # seconds between directory scans
 
 # -------------------------------------------------------

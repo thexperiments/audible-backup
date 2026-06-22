@@ -1,6 +1,8 @@
 # audible-backup
 
-Backs up your Audible library to DRM-free M4B files. Chapters and metadata are preserved. No re-encoding — fast lossless remux.
+A containerized wrapper around [audible-cli](https://github.com/mkb79/audible-cli) that downloads your Audible library and converts it to DRM-free M4B files. Chapters and metadata are preserved. No re-encoding — fast lossless remux.
+
+All the heavy lifting (authentication, library downloading, DRM key handling) is done by audible-cli. This project just packages it into a Docker container with a conversion layer on top, so you can run it on a schedule without any manual steps.
 
 ## Requirements
 
@@ -165,5 +167,5 @@ Unless Stopped
 |---|---|---|
 | `DOWNLOAD_DIR` | `/output/raw` | Where raw AAX/AAXC files are saved |
 | `OUTPUT_DIR` | `/output/converted` | Where M4B files are written |
-| `AUDIBLE_CONFIG_DIR` | `/root/.audible` | Path to the audible-cli config directory |
+| `AUDIBLE_CONFIG_DIR` | `~/.audible` | Path to the audible-cli config directory (default matches audible-cli's own default) |
 | `SCHEDULE` | *(unset)* | Cron expression — if set, container stays alive and runs on schedule; if unset, runs once and exits |
